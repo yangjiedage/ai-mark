@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <!-- Load the Paper.js library -->
+  <script type="text/javascript" src="paper-full.js"></script>
+  <!-- Define inlined JavaScript -->
+  <style>
+    html,
+    body {
+        height: 100%;
+    }
+
+    /* Scale canvas with resize attribute to full size */
+    canvas[resize] {
+        width: 100%;
+        height: 100%;
+    }
+    #myCanvas{
+      border: 1px solid black;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <button id="add">增加</button>
+	<canvas id="myCanvas" resize></canvas>
+</body>
+<script>
+  let isAddDotMode = false
+  paper.install(window);
+  window.onload = function() {
+    paper.setup('myCanvas');
+    // Create a simple drawing tool:
+    const tool = new Tool();
+    const pointList = []
+    pointList.push(new Point(100, 100))
+    pointList.push(new Point(250, 50))
+    pointList.push(new Point(200, 200))
+    pointList.push(new Point(100, 200))
+
+    const dotList = []
+
+    const path = new Path()
+    path.strokeColor = 'black'
+    path.strokeWidth = 2
+    path.closed = true
+
+    pointList.forEach((point, index) => {
+      path.add(point)
+    })
+
+    function createDots(segments) {
+      dotList.forEach(dot => {
+        dot.removeSegments()
+      })
+      segments.forEach((segment) => {
+        if(segment.next) {
+          dotList.push(createDot(segment, 10))
+        }
+      })
+    }
+
+    createDots(path.segments)
+
+    function checkPointOnLine(point, segments) {
+      const len = segments.length - 1
+      for(let i = 0; i < len; i++) {
+        const currentX = segments[i].point.x
+        const nextX = segments[i+1].point.x
+        const leftX = currentX < nextX ? currentX : nextX
+        const rightX = currentX < nextX ? nextX : currentX
+
+        const currentY = segments[i].point.y
+        const nextY= segments[i+1].point.y
+        const topY = currentY < nextY ? currentY : nextY
+        const bottomY = currentY < nextY ? nextY : currentY
+        const inX = point.x >= leftX && point.x <= rightX
+        const inY = point.y >= topY && point.y <= bottomY
+        
+        if(inX && inY) {
+          return [i, i + 1]
+        }
+      }
+      return false
+    }
+
+
+    path.onMouseMove = function(event) {
+      const { point } = event
+      const checkPointOnLineResult = checkPointOnLine(point, path.segments)
+
+      if(!checkPointOnLineResult) return
+
+      const [currentIndex, nextIndex] = checkPointOnLineResult
+
+    }
+
+    const hitOptions = {
+      segments: true,
+      stroke: true,
+      fill: true,
+      tolerance: 5
+    }
+
+    path.onMouseDown = function(event) {
+      const { point } = event
+      const hitResult = project.hitTest(event.point, hitOptions);
+      const checkPointOnLineResult = checkPointOnLine(point, path.segments)
+
+      if(!checkPointOnLineResult) return
+
+      const nextIndex = checkPointOnLineResult[1]
+      const nextPoint = new Point(event.point)
+      path.insert(nextIndex, nextPoint)
+      createDots(path.segments)
+    }
+
+    function createDot(segment, radius) {
+      const dot = new Path.Circle(segment.point, radius)
+      dot.fillColor = 'blue'
+
+      const index = path.segments.indexOf(segment)
+      dot.onMouseDrag = function dotDrag(event) {
+        dot.position = event.point
+        path.removeSegment(index)
+        path.insert(index, event.point)
+      }
+      return dot
+    }
+  }
+  const addBtn = document.getElementById('add')
+  addBtn.addEventListener('click', function() {
+    if(isAddDotMode) {
+      isAddDotMode = false
+      addBtn.innerHTML = '增加'
+      document.body.style.cursor = 'default'
+      return
+    }
+    document.body.style.cursor = 'pointer'
+    isAddDotMode = true
+    addBtn.innerHTML = '取消'
+  })
+
+  
+</script>
+</html>

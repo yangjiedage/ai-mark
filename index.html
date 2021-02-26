@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <!-- Load the Paper.js library -->
+  <script type="text/javascript" src="paper-full.js"></script>
+  <!-- Define inlined JavaScript -->
+  <style>
+    html,
+    body {
+        height: 100%;
+    }
+
+    /* Scale canvas with resize attribute to full size */
+    canvas[resize] {
+        width: 100%;
+        height: 100%;
+    }
+    #myCanvas{
+      border: 1px solid black;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <button id="add">增加</button>
+	<canvas id="myCanvas" resize></canvas>
+</body>
+<script>
+
+  const supportColor = '#e1e111'
+  let isAddDotMode = false
+  paper.install(window);
+  window.onload = function() {
+    paper.setup('myCanvas');
+    // Create a simple drawing tool:
+    const tool = new Tool();
+
+    tool.onMouseMove = function onMouseMove(event) {
+      project.activeLayer.selected = false;
+      if (event.item)
+        event.item.selected = true;
+    }
+
+    const pointList = []
+    const realPoints = []
+    const sepcialPoints = [0,3]
+    pointList.push(new Point(100, 250))
+    pointList.push(new Point(200, 100))
+    pointList.push(new Point(500, 100))
+    pointList.push(new Point(600, 250))
+    pointList.push(new Point(500, 400))
+    pointList.push(new Point(200, 400))
+
+    realPoints.push(new Point(300, 100))
+    realPoints.push(new Point(400, 100))
+    realPoints.push(new Point(150, 175))
+
+
+    function createRealPoints(points) {
+      points.forEach(point => {
+        const dot = new Path.Circle(point, 5)
+        dot.fillColor = 'red'
+      })
+    }
+
+    const dotList = []
+
+    const path = new Path()
+    path.strokeColor = supportColor
+    path.strokeWidth = 2
+    path.closed = true
+
+    pointList.forEach((point, index) => {
+      path.add(point)
+    })
+
+    console.log(project.activeLayer)
+    createSpecialPoints(sepcialPoints)
+    createDots(path.segments)
+    createRealPoints(realPoints)
+
+    function createDots(segments) {
+      dotList.forEach(dot => {
+        dot.removeSegments()
+      })
+      segments.forEach((segment) => {
+        if(segment.next) {
+          dotList.push(createDot(segment, 10))
+        }
+      })
+    }
+
+    function createSpecialPoints(list) {
+      list.forEach(pointIndex => {
+        console.log(path.segments[pointIndex].point)
+        const dot = new Path.Circle(path.segments[pointIndex].point, 12)
+        dot.fillColor = 'blue'
+      })
+    }
+
+
+    const hitOptions = {
+      stroke: true,
+      tolerance: 5
+    }
+
+    path.onMouseDown = function(event) {
+      const { point } = event
+      const hitResult = project.hitTest(event.point, hitOptions);
+
+      console.log(event.point)
+      if(!hitResult) return
+      const nextPoint = new Point(event.point)
+      path.insert(hitResult.location.index + 1, nextPoint)
+      createDots(path.segments)
+    }
+
+    function createDot(segment, radius) {
+      const dot = new Path.Circle(segment.point, radius)
+      dot.fillColor = supportColor
+
+      const index = path.segments.indexOf(segment)
+      dot.onMouseDrag = function dotDrag(event) {
+        dot.position = event.point
+        path.removeSegment(index)
+        path.insert(index, event.point)
+      }
+
+      dot.onMouseUp = function(event) {
+        console.log('mouse up')
+      }
+      return dot
+    }
+  }
+  const addBtn = document.getElementById('add')
+  addBtn.addEventListener('click', function() {
+    if(isAddDotMode) {
+      isAddDotMode = false
+      addBtn.innerHTML = '增加'
+      document.body.style.cursor = 'default'
+      return
+    }
+    document.body.style.cursor = 'pointer'
+    isAddDotMode = true
+    addBtn.innerHTML = '取消'
+  })
+
+  
+</script>
+</html>
