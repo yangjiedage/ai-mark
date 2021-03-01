@@ -29,10 +29,11 @@
   <button id="add">增加</button>
 	<canvas id="myCanvas" resize></canvas>
 </body>
+<script src="data.js"></script>
 <script>
-
-  const supportColor = '#e1e111'
+  const yellowColor = '#e1e111'
   let isAddDotMode = false
+  
   paper.install(window);
   window.onload = function() {
     paper.setup('myCanvas');
@@ -45,63 +46,79 @@
         event.item.selected = true;
     }
 
-    const pointList = []
-    const realPoints = []
-    const sepcialPoints = [0,3]
-    pointList.push(new Point(100, 250))
-    pointList.push(new Point(200, 100))
-    pointList.push(new Point(500, 100))
-    pointList.push(new Point(600, 250))
-    pointList.push(new Point(500, 400))
-    pointList.push(new Point(200, 400))
-
-    realPoints.push(new Point(300, 100))
-    realPoints.push(new Point(400, 100))
-    realPoints.push(new Point(150, 175))
-
-
-    function createRealPoints(points) {
-      points.forEach(point => {
-        const dot = new Path.Circle(point, 5)
-        dot.fillColor = 'red'
-      })
-    }
-
-    const dotList = []
+    // 所有拐点的位置
+    const pointList = markDotData.map(dot => {
+      return new Point(dot.x, dot.y)
+    })
+    const sepcialPoints = [2,4,8]
+    const breakPointList = []
 
     const path = new Path()
-    path.strokeColor = supportColor
+    path.strokeColor = yellowColor
     path.strokeWidth = 2
     path.closed = true
 
     pointList.forEach((point, index) => {
       path.add(point)
     })
+    initSpecialPoints(sepcialPoints)
+    initMarkDots(path.segments) // 后绘制的在上面
 
-    console.log(project.activeLayer)
-    createSpecialPoints(sepcialPoints)
-    createDots(path.segments)
-    createRealPoints(realPoints)
-
-    function createDots(segments) {
-      dotList.forEach(dot => {
-        dot.removeSegments()
-      })
-      segments.forEach((segment) => {
-        if(segment.next) {
-          dotList.push(createDot(segment, 10))
+    function initMarkDots(segments) {
+      segments.forEach((segment, index) => {
+        const isEven = index % 2 === 0
+        // 偶数个添加黄点
+        if(segment.next && isEven) {
+          segment.isBreakPoint = true
+          breakPointList.push(createDot(segment, 10))
         }
       })
     }
 
-    function createSpecialPoints(list) {
+    function initSpecialPoints(list) {
       list.forEach(pointIndex => {
-        console.log(path.segments[pointIndex].point)
         const dot = new Path.Circle(path.segments[pointIndex].point, 12)
         dot.fillColor = 'blue'
       })
     }
 
+    function findBreakPointIndexInSegments(breakPoint, segments) {
+      for(let i = 0; i < segments.length; i++) {
+        const {x: segmentX, y: segmentY } = segments[i].point
+        const {x: breakPointX, y: breakPointY } = breakPoint.position
+
+        if(segmentX === breakPointX && segmentY === breakPointY) {
+          return i
+        }
+      }
+    }
+
+    function findSegmentIndexInBreakPoints(segment, pointList) {
+      for(let i = 0; i < pointList.length; i++) {
+        const {x: segmentX, y: segmentY } = segment.point
+        const {x: breakPointX, y: breakPointY } = pointList[i].position
+
+        if(segmentX === breakPointX && segmentY === breakPointY) {
+          return i
+        }
+      }
+    }
+
+    function refreshBreakPoint(currentPointId) {
+      for(let i = 0; i < breakPointList.length; i++) {
+        const breakPoint = breakPointList[i]
+
+        if(currentPointId === breakPoint.id) continue
+
+        // 找到点位在segments里的index
+        const breakPointIndexInPath = findBreakPointIndexInSegments(breakPoint, path.segments)
+        // 把拐点删了
+        breakPoint.removeSegments()
+        // 以最新的segment去创建拐点
+        breakPointList[i] = createDot(path.segments[breakPointIndexInPath], 10)
+      }
+      
+    }
 
     const hitOptions = {
       stroke: true,
@@ -112,30 +129,74 @@
       const { point } = event
       const hitResult = project.hitTest(event.point, hitOptions);
 
-      console.log(event.point)
       if(!hitResult) return
       const nextPoint = new Point(event.point)
-      path.insert(hitResult.location.index + 1, nextPoint)
-      createDots(path.segments)
+      const nextIndex = hitResult.location.index + 1
+      path.insert(nextIndex, nextPoint)
+      path.segments[nextIndex].isBreakPoint = true
+
+      const nextBraekPointSegment = path.segments[nextIndex].next
+      const previousBreakPointSegment = path.segments[nextIndex].previous
+      let currentBreakPointIndex = 0
+
+      //如果下一个点是拐点，当前点index去下一个拐点的index
+      if(nextBraekPointSegment.isBreakPoint) {
+        currentBreakPointIndex = findSegmentIndexInBreakPoints(nextBraekPointSegment, breakPointList)
+      }
+
+      //上一个点是拐点的情况
+      if(previousBreakPointSegment.isBreakPoint) {
+        currentBreakPointIndex = findSegmentIndexInBreakPoints(previousBreakPointSegment, breakPointList)
+        // 因为上一个是拐点，所以当前点index需要加一
+        currentBreakPointIndex = currentBreakPointIndex + 1
+      }
+
+      const nextBreakPoint = createDot(path.segments[nextIndex], 10)
+      
+      breakPointList.splice(currentBreakPointIndex, 0, nextBreakPoint)
+      refreshBreakPoint(nextBreakPoint.id)
     }
 
     function createDot(segment, radius) {
-      const dot = new Path.Circle(segment.point, radius)
-      dot.fillColor = supportColor
+      let index = segment.index
+      const newDot = new Path.Circle(segment.point, radius)
 
-      const index = path.segments.indexOf(segment)
-      dot.onMouseDrag = function dotDrag(event) {
-        dot.position = event.point
+      newDot.fillColor = yellowColor
+      newDot.onMouseDrag = function dotDrag(event) {
+        const currentSegment = path.segments[index]
+
+        newDot.position = event.point
+
+        // 如果上一个segment和下一个segment都是拐点，直接移动
+        if(currentSegment.previous.isBreakPoint && currentSegment.next.isBreakPoint) {
+          path.removeSegment(index)
+          path.insert(index, event.point)
+          path.segments[index].isBreakPoint = true
+          return
+        }
+
+        // 上一个segment不是拐点，删除上一个segment，拉平
+        if(!currentSegment.previous.isBreakPoint) {
+          path.removeSegment(currentSegment.previous.index)
+          index = index > 0 ? index - 1 : index // 当index为0，代表当前是头节点，index不变
+        }
+
+        // 下一个segment不是拐点，删除segment
+        if(!currentSegment.next.isBreakPoint){
+          path.removeSegment(currentSegment.next.index)
+        }
+        
         path.removeSegment(index)
         path.insert(index, event.point)
+        path.segments[index].isBreakPoint = true
+        // 因为删除segment，因为闭包原因，导致index改变了，所以要更新所有点位
+        refreshBreakPoint(newDot.id)
       }
-
-      dot.onMouseUp = function(event) {
-        console.log('mouse up')
-      }
-      return dot
+      return newDot
     }
   }
+
+  // 工具栏按钮
   const addBtn = document.getElementById('add')
   addBtn.addEventListener('click', function() {
     if(isAddDotMode) {
@@ -149,6 +210,5 @@
     addBtn.innerHTML = '取消'
   })
 
-  
 </script>
 </html>
