@@ -32,7 +32,9 @@
 <script src="data.js"></script>
 <script>
   const yellowColor = '#e1e111'
+  const markDotRadius = 2
   let isAddDotMode = false
+  const divideNum = 10
   
   paper.install(window);
   window.onload = function() {
@@ -50,8 +52,10 @@
     const pointList = markDotData.map(dot => {
       return new Point(dot.x, dot.y)
     })
-    const sepcialPoints = [2,4,8]
+    const keyPoints = [0, 4, 8]
     const breakPointList = []
+    const markPointList = []
+    const keyPointList = []
 
     const path = new Path()
     path.strokeColor = yellowColor
@@ -61,9 +65,13 @@
     pointList.forEach((point, index) => {
       path.add(point)
     })
-    initSpecialPoints(sepcialPoints)
+    initKeyPoints(keyPoints)
     initMarkDots(path.segments) // 后绘制的在上面
+    initMarkPoints()
 
+    /*
+      初始化方法
+    */
     function initMarkDots(segments) {
       segments.forEach((segment, index) => {
         const isEven = index % 2 === 0
@@ -75,13 +83,112 @@
       })
     }
 
-    function initSpecialPoints(list) {
+    function initKeyPoints(list) {
       list.forEach(pointIndex => {
-        const dot = new Path.Circle(path.segments[pointIndex].point, 12)
-        dot.fillColor = 'blue'
+        path.segments[pointIndex].isKeyPoint = true
+        const keyPoint = createKeyPoint(path.segments[pointIndex].point, 12)
+        keyPointList.push(keyPoint)
       })
     }
 
+    function initMarkPoints() {
+      const keyPointWithSegments = path.segments.filter(segment => segment.isKeyPoint)
+
+      for(let i = 0; i < keyPointWithSegments.length; i++) {
+        const fromIndex = keyPointWithSegments[i].index
+        const toIndex = i === keyPointWithSegments.length - 1 ? path.segments.length : keyPointWithSegments[i + 1].index
+        markPointList.push(...createMarkPoints(fromIndex, toIndex, path.segments, divideNum))
+      }
+    }
+
+    function refreshKeyPoints() {
+      // 获取所有关键点所在segment
+      const keyPointWithSegments = path.segments.filter(segment => segment.isKeyPoint)
+      const newMarkPointList = []
+      
+      // 移动关键点的坐标到新的segment坐标
+      for(let i = 0; i < keyPointList.length; i++) {
+        keyPointList[i].position = keyPointWithSegments[i].point
+      }
+
+      // 根据关键点变化，新生成一批新的标注点
+      for(let i = 0; i < keyPointWithSegments.length; i++) {
+        const fromIndex = keyPointWithSegments[i].index
+        const toIndex = i === keyPointWithSegments.length - 1 ? path.segments.length : keyPointWithSegments[i + 1].index
+        newMarkPointList.push(...createMarkPoints(fromIndex, toIndex, path.segments, divideNum))
+      }
+      // 移动当前标注点到新的标注点
+      markPointList.forEach((point, pointIndex) => {
+        point.position = newMarkPointList[pointIndex].position
+      })
+      
+      // 删除新生成的标注点
+      newMarkPointList.forEach(point => point.removeSegments())
+    }
+
+    /*
+      创建标记点
+      params:{
+        from: number #起始segment的index,
+        to: number #结束segment的index,
+        segments: Array<Segment> #所有的segments
+        divideNum: number # 划分的点位个数
+      }
+    */
+    function createMarkPoints(from, to, segments, divideNum) {
+      let current = segments[from]
+      let lengthTotal = 0 // 两个关键点之间的总长
+      const partMarkPointList = []
+      const currentSegmentList = [current] // from到to的segment
+
+      for(let i = from; i < to; i++) {
+        currentSegmentList.push(current.next)
+        current = current.next
+      }
+
+      for(let i = 0; i < to - from; i++){
+        lengthTotal += currentSegmentList[i].curve.length
+      }
+
+      // 单个划分的线段长度
+      const divideUnitLen = lengthTotal / divideNum
+
+      current = currentSegmentList[0]
+      let currentMarkPoint = createMarkPoint(current.point, markDotRadius)
+      partMarkPointList.push(currentMarkPoint)
+
+      for(let i = 1; i < divideNum; i++) {
+        const { x: currentX, y: currentY } = currentMarkPoint.position
+        const { x: nextX, y: nextY} = current.next.point
+        // 代表当前点到目标点的长度
+        let newLen = divideUnitLen 
+        // 代表结束点到当前点的长度
+        let newLeft = calculatePythagorean(currentX, nextX, currentY, nextY)
+
+        // 剩余长度大于单位长度，表示目标点在该线段上
+        // 否则目标点在下一个线段上
+        if(newLeft >= divideUnitLen) {
+          currentMarkPoint = arrangeMarkPoint(currentMarkPoint.position, current.next.point, newLen, newLeft - newLen)
+          partMarkPointList.push(currentMarkPoint)
+        } else {
+          // 剩余长度不够，用单位长度减去剩余长度，得到新的目标点长度
+          newLen = divideUnitLen - newLeft
+          // 新的剩余长度等于下一线段长度 减去 新的目标点长度
+          newLeft = current.next.curve.length - newLen
+          // 当前点下移
+          current = current.next
+
+          currentMarkPoint = arrangeMarkPoint(current.point, current.next.point, newLen, newLeft)
+          partMarkPointList.push(currentMarkPoint)
+        }
+      }
+
+      return partMarkPointList
+    }
+
+    /*
+      工具方法
+    */
     function findBreakPointIndexInSegments(breakPoint, segments) {
       for(let i = 0; i < segments.length; i++) {
         const {x: segmentX, y: segmentY } = segments[i].point
@@ -104,6 +211,33 @@
       }
     }
 
+    // 计算直角三角形对边
+    function calculatePythagorean(x1, x2, y1, y2) {
+      const x = Math.pow((x1 - x2), 2)
+      const y = Math.pow((y1 - y2), 2)
+      return Math.sqrt(x + y)
+    }
+
+    // 给定两个坐标，以及长度，计算目标点坐标
+    function calculateLinearOneUnknown(x1, x2, y1, y2, len, left) {
+      const y = (len * y2 + y1 * left) / (left + len)
+      const x = (len * x2 + x1 * left) / (left + len)
+      return {
+        x, y
+      }
+    }
+
+    function logPointPosition(list) {
+      const result = []
+      list.forEach((item) => {
+        result.push({
+          x: item.position.x,
+          y: item.position.y
+        })
+      })
+      console.log(result)
+    }
+
     function refreshBreakPoint(currentPointId) {
       for(let i = 0; i < breakPointList.length; i++) {
         const breakPoint = breakPointList[i]
@@ -117,7 +251,17 @@
         // 以最新的segment去创建拐点
         breakPointList[i] = createDot(path.segments[breakPointIndexInPath], 10)
       }
-      
+    }
+
+    function arrangeMarkPoint(current, toSegment, len, left) {
+      const { x: currentX, y: currentY } = current
+      const { x: nextX, y: nextY} = toSegment
+
+      const {
+        x: newX,
+        y: newY
+      } = calculateLinearOneUnknown(currentX, nextX, currentY, nextY, len, left)
+      return createMarkPoint(new Point(newX, newY), markDotRadius)
     }
 
     const hitOptions = {
@@ -130,6 +274,8 @@
       const hitResult = project.hitTest(event.point, hitOptions);
 
       if(!hitResult) return
+      if(!isAddDotMode) return
+
       const nextPoint = new Point(event.point)
       const nextIndex = hitResult.location.index + 1
       path.insert(nextIndex, nextPoint)
@@ -157,6 +303,10 @@
       refreshBreakPoint(nextBreakPoint.id)
     }
 
+    /*
+      点创建方法
+    */
+
     function createDot(segment, radius) {
       let index = segment.index
       const newDot = new Path.Circle(segment.point, radius)
@@ -164,6 +314,7 @@
       newDot.fillColor = yellowColor
       newDot.onMouseDrag = function dotDrag(event) {
         const currentSegment = path.segments[index]
+        const currentSegmentIsKeyPoint = currentSegment.isKeyPoint
 
         newDot.position = event.point
 
@@ -172,6 +323,7 @@
           path.removeSegment(index)
           path.insert(index, event.point)
           path.segments[index].isBreakPoint = true
+          path.segments[index].isKeyPoint = currentSegmentIsKeyPoint
           return
         }
 
@@ -189,9 +341,80 @@
         path.removeSegment(index)
         path.insert(index, event.point)
         path.segments[index].isBreakPoint = true
-        // 因为删除segment，因为闭包原因，导致index改变了，所以要更新所有点位
+        path.segments[index].isKeyPoint = currentSegmentIsKeyPoint
+        // 删除segment，因为闭包，导致index改变了，所以要更新所有点位
         refreshBreakPoint(newDot.id)
       }
+
+      newDot.onMouseUp = function(event) {
+        const currentSegment = path.segments[index]
+
+        // 当拖动的是关键点，刷新所有点位
+        if(currentSegment.isKeyPoint){
+          refreshKeyPoints()
+          return
+        }
+      
+        let tempSegment = currentSegment.previous
+        let startX = 0          // 起始segment，也就是起始mark点 x坐标
+        let startY = 0          // y坐标
+        let endX = 0            // 结束segment，也就是结束mark点 x坐标
+        let endY = 0            // y坐标
+        let startIndex = 0      // 起始mark点的index
+        let endIndex = 0        // 结束mark点的index
+
+        // 迭代segment，找到最近相邻的两个keyPointSegment
+        while(!tempSegment.isKeyPoint) {
+          tempSegment = tempSegment.previous
+        }
+        const fromIndex = tempSegment.index // 起始segment的index
+        startX = tempSegment.point.x
+        startY = tempSegment.point.y
+
+        tempSegment = currentSegment.next
+        while(!tempSegment.isKeyPoint) {
+          tempSegment = tempSegment.next
+        }
+        endX = tempSegment.point.x
+        endY = tempSegment.point.y
+        // 结束segment的index
+        // 如果最后一个指向index 0，代表最后一段，也就是segments的长度
+        const toIndex = tempSegment.index === 0 ? path.segments.length : tempSegment.index
+
+        // 循环所有的mark点，直到找到第一个坐标和起始segment坐标一致，当前的index就是起始
+        for(let i = 0; i < markPointList.length; i++) {
+          const { x: markX, y: markY } = markPointList[i].position
+          if(markX === startX && markY === startY) {
+            startIndex = i
+            break
+          }
+        }
+        // 起始mark点的index 加上 点位个数，可以得到结束index
+        endIndex = startIndex + divideNum
+
+        const partMarkPointList = createMarkPoints(fromIndex, toIndex, path.segments, divideNum)
+
+        // 根据起始结束index，更改mark点的坐标
+        for(let i = startIndex; i < endIndex; i++) {
+          markPointList[i].position = partMarkPointList[i - startIndex].position
+        }
+        // 删除新生成的点位
+        partMarkPointList.forEach(point => point.removeSegments())
+      }
+      return newDot
+    }
+
+    function createMarkPoint(point, radius) {
+      const newDot = new Path.Circle(point, radius)
+
+      newDot.fillColor = 'red'
+      return newDot
+    }
+
+    function createKeyPoint(point, radius) {
+      const newDot = new Path.Circle(point, radius)
+      newDot.fillColor = 'blue'
+
       return newDot
     }
   }
