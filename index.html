@@ -23,18 +23,37 @@
       border: 1px solid black;
       box-sizing: border-box;
     }
+    .tips{
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
-  <button id="add">增加</button>
+  <div class="tips">
+    <div>
+      <span>新增点位：</span>
+      <span>使用alt + 鼠标右键，增加黄点</span>
+    </div>
+  </div>
 	<canvas id="myCanvas" resize></canvas>
 </body>
 <script src="data.js"></script>
 <script>
+
+  (function () {
+    const blockContextMenu = function (evt) {
+      evt.preventDefault();
+    };
+
+    const myElement = document.querySelector('#myCanvas');
+    myElement.addEventListener('contextmenu', blockContextMenu);
+  })();
   const yellowColor = '#e1e111'
   const markDotRadius = 2
+  const breakPointRadius = 10
   let isAddDotMode = false
-  const divideNum = 10
+  const divideNum = 20
+  const RIGHT_CLICK = 2
   
   paper.install(window);
   window.onload = function() {
@@ -78,7 +97,7 @@
         // 偶数个添加黄点
         if(segment.next && isEven) {
           segment.isBreakPoint = true
-          breakPointList.push(createDot(segment, 10))
+          breakPointList.push(createDot(segment, breakPointRadius))
         }
       })
     }
@@ -249,7 +268,7 @@
         // 把拐点删了
         breakPoint.removeSegments()
         // 以最新的segment去创建拐点
-        breakPointList[i] = createDot(path.segments[breakPointIndexInPath], 10)
+        breakPointList[i] = createDot(path.segments[breakPointIndexInPath], breakPointRadius)
       }
     }
 
@@ -274,7 +293,7 @@
       const hitResult = project.hitTest(event.point, hitOptions);
 
       if(!hitResult) return
-      if(!isAddDotMode) return
+      if(!Key.isDown('alt') || event.event.button !== RIGHT_CLICK) return
 
       const nextPoint = new Point(event.point)
       const nextIndex = hitResult.location.index + 1
@@ -297,7 +316,7 @@
         currentBreakPointIndex = currentBreakPointIndex + 1
       }
 
-      const nextBreakPoint = createDot(path.segments[nextIndex], 10)
+      const nextBreakPoint = createDot(path.segments[nextIndex], breakPointRadius)
       
       breakPointList.splice(currentBreakPointIndex, 0, nextBreakPoint)
       refreshBreakPoint(nextBreakPoint.id)
@@ -420,18 +439,5 @@
   }
 
   // 工具栏按钮
-  const addBtn = document.getElementById('add')
-  addBtn.addEventListener('click', function() {
-    if(isAddDotMode) {
-      isAddDotMode = false
-      addBtn.innerHTML = '增加'
-      document.body.style.cursor = 'default'
-      return
-    }
-    document.body.style.cursor = 'pointer'
-    isAddDotMode = true
-    addBtn.innerHTML = '取消'
-  })
-
 </script>
 </html>
