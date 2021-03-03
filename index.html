@@ -26,6 +26,10 @@
     .tips{
       margin-bottom: 20px;
     }
+    .canvas-container{
+      width: 3000px;
+      height: 5000px;
+    }
   </style>
 </head>
 <body>
@@ -35,7 +39,9 @@
       <span>使用alt + 鼠标右键，增加黄点</span>
     </div>
   </div>
-	<canvas id="myCanvas" resize></canvas>
+	<div class="canvas-container">
+    <canvas id="myCanvas" resize></canvas>
+  </div>
 </body>
 <script src="data.js"></script>
 <script>
@@ -50,11 +56,12 @@
   })();
   const yellowColor = '#e1e111'
   const markDotRadius = 2
-  const breakPointRadius = 10
-  let isAddDotMode = false
+  const breakPointRadius = 6
+  const keyPointRadius = 8
   const divideNum = 20
   const RIGHT_CLICK = 2
-  
+  const canvasHeight = 5000
+
   paper.install(window);
   window.onload = function() {
     paper.setup('myCanvas');
@@ -66,27 +73,48 @@
       if (event.item)
         event.item.selected = true;
     }
-
-    // 所有拐点的位置
-    const pointList = markDotData.map(dot => {
-      return new Point(dot.x, dot.y)
-    })
-    const keyPoints = [0, 4, 8]
+    const canvas = document.getElementById('myCanvas')
+    const imgRaster = new Raster(figureData.url)
+    const keyPoints = [0, 8]
     const breakPointList = []
     const markPointList = []
     const keyPointList = []
 
     const path = new Path()
     path.strokeColor = yellowColor
-    path.strokeWidth = 2
+    path.strokeWidth = markDotRadius
     path.closed = true
 
-    pointList.forEach((point, index) => {
-      path.add(point)
-    })
-    initKeyPoints(keyPoints)
-    initMarkDots(path.segments) // 后绘制的在上面
-    initMarkPoints()
+    imgRaster.position = view.center;
+
+    imgRaster.onLoad = function() {
+      const widthHeightRate = imgRaster.width / imgRaster.height
+      const scaleRate = canvasHeight / imgRaster.height
+      imgRaster.height = canvasHeight
+      imgRaster.width = canvasHeight * widthHeightRate
+      const x = imgRaster.position.x - imgRaster.width / 2
+      const y = 0
+
+      const nextPointData = figureData.defaultValue.annotation[0].points
+        .map(point => ({
+          x: point.x * scaleRate + x,
+          y: point.y * scaleRate + y
+        }))
+      
+      const pointList = []
+      templateData.lines[1].points.forEach(pointIndex => {
+        const dot = nextPointData[pointIndex]
+        pointList.push(new Point(dot.x, dot.y))
+      })
+  
+      for(let i = 0; i < pointList.length - 1; i++) {
+        path.add(pointList[i])
+      }
+      initKeyPoints(keyPoints, path.segments)
+      initMarkDots(path.segments) // 后绘制的在上面
+      initMarkPoints(path.segments)
+    }
+    
 
     /*
       初始化方法
@@ -102,21 +130,21 @@
       })
     }
 
-    function initKeyPoints(list) {
+    function initKeyPoints(list, segments) {
       list.forEach(pointIndex => {
-        path.segments[pointIndex].isKeyPoint = true
-        const keyPoint = createKeyPoint(path.segments[pointIndex].point, 12)
+        segments[pointIndex].isKeyPoint = true
+        const keyPoint = createKeyPoint(segments[pointIndex].point, keyPointRadius)
         keyPointList.push(keyPoint)
       })
     }
 
-    function initMarkPoints() {
-      const keyPointWithSegments = path.segments.filter(segment => segment.isKeyPoint)
+    function initMarkPoints(segments) {
+      const keyPointWithSegments = segments.filter(segment => segment.isKeyPoint)
 
       for(let i = 0; i < keyPointWithSegments.length; i++) {
         const fromIndex = keyPointWithSegments[i].index
-        const toIndex = i === keyPointWithSegments.length - 1 ? path.segments.length : keyPointWithSegments[i + 1].index
-        markPointList.push(...createMarkPoints(fromIndex, toIndex, path.segments, divideNum))
+        const toIndex = i === keyPointWithSegments.length - 1 ? segments.length : keyPointWithSegments[i + 1].index
+        markPointList.push(...createMarkPoints(fromIndex, toIndex, segments, divideNum))
       }
     }
 
