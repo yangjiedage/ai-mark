@@ -58,13 +58,345 @@
   const markDotRadius = 2
   const breakPointRadius = 6
   const keyPointRadius = 8
-  const divideNum = 20
+  const divideNum = 10
   const RIGHT_CLICK = 2
   const canvasHeight = 5000
+  const hitOptions = {
+    stroke: true,
+    tolerance: 5
+  }
 
   paper.install(window);
   window.onload = function() {
     paper.setup('myCanvas');
+
+    function AxisPath(pointList, annoList) {
+      this.path = new Path({
+        strokeColor: 'blue',
+        strokeWidth: markDotRadius,
+      })
+      this.markPointList = []
+      this.annoList = annoList
+
+
+      for(let i = 0; i < pointList.length; i++) {
+        this.path.add(pointList[i])
+      }
+
+      this.createMarkPoint = (segment) => {
+        const newDot = new Path.Circle(segment.point, 10)
+        newDot.fillColor = 'blue'
+
+        const index = segment.index
+        let currentPoint = null
+
+        newDot.onMouseDrag = (event) => {
+          newDot.position = event.point
+          const currentSegment = this.path.segments[index]
+         
+          for(let i = 0; i < this.annoList.length; i++) {
+            const anno = annoList[i]
+
+            const breakPointIndex = findSegmentIndexInBreakPoints(currentSegment, anno.breakPointList)
+
+            if(breakPointIndex >= 0) {
+              currentPoint = anno.breakPointList[breakPointIndex]
+              currentPoint.emit('mousedrag', event)
+              break
+            }
+          }
+          this.path.removeSegment(index)
+          this.path.insert(index, event.point)
+        }
+
+        newDot.onMouseUp = (event) => {
+          currentPoint.emit('mouseup', event)
+        }
+      }
+      this.initMarkPoints = () => {
+        this.path.segments.forEach(segment => {
+          this.markPointList.push(this.createMarkPoint(segment))
+        })
+      }
+      
+      this.initMarkPoints()
+    }
+    function checkPathIsClosed(pointList) {
+      const { x: startX, y: startY } = pointList[0]
+      const { x: endX, y: endY } = pointList[pointList.length - 1]
+      return startX === endX && startY === endY
+    }
+
+    function checkSegmentInKeyPoints(segment) {
+      let previousHasKeyPoint = false
+      let nextHasKeyPoint = false
+      let previousSegment = segment
+      let nextSegment = segment
+
+      while(previousSegment.previous) {
+        if(previousSegment.previous.isKeyPoint) {
+          previousHasKeyPoint = true
+          break
+        }
+        previousSegment = previousSegment.previous
+      }
+      while(nextSegment.next) {
+        if(nextSegment.next.isKeyPoint) {
+          nextHasKeyPoint = true
+          break
+        }
+        nextSegment = nextSegment.next
+      }
+
+      return previousHasKeyPoint && nextHasKeyPoint
+    }
+
+    function Annotation(pointList, keyPoints) {
+      this.path = new Path({
+        strokeColor: yellowColor,
+        strokeWidth: markDotRadius,
+        closed: checkPathIsClosed(pointList)
+      })
+      this.breakPointList = []
+      this.markPointList = []
+      this.keyPointList = []
+      this.keyPoints = keyPoints
+
+      const len = this.path.closed ? pointList.length - 1 : pointList.length
+      for(let i = 0; i < len; i++) {
+        this.path.add(pointList[i])
+      }
+
+      this.refreshBreakPoint = (currentPointId) => {
+        for(let i = 0; i < this.breakPointList.length; i++) {
+          const breakPoint = this.breakPointList[i]
+
+          if(currentPointId === breakPoint.id) continue
+
+          // 找到点位在segments里的index
+          const breakPointIndexInPath = findBreakPointIndexInSegments(breakPoint, this.path.segments)
+          // 把拐点删了
+          breakPoint.removeSegments()
+          // 以最新的segment去创建拐点
+          this.breakPointList[i] = this.createBreakPoint(this.path.segments[breakPointIndexInPath], breakPointRadius)
+        }
+      }
+
+      this.refreshKeyPoints = () => {
+        // 获取所有关键点所在segment
+        const keyPointWithSegments = this.path.segments.filter(segment => segment.isKeyPoint)
+        const newMarkPointList = []
+        
+        // 移动关键点的坐标到新的segment坐标
+        for(let i = 0; i < this.keyPointList.length; i++) {
+          this.keyPointList[i].position = keyPointWithSegments[i].point
+        }
+
+        const len = this.path.closed ? keyPointWithSegments.length: keyPointWithSegments.length - 1
+        // 根据关键点变化，新生成一批新的标注点
+        for(let i = 0; i < len; i++) {
+          const fromIndex = keyPointWithSegments[i].index
+          const toIndex = i === keyPointWithSegments.length - 1 ? this.path.segments.length : keyPointWithSegments[i + 1].index
+          newMarkPointList.push(...createMarkPoints(fromIndex, toIndex, this.path.segments, divideNum))
+        }
+        // 移动当前标注点到新的标注点
+        this.markPointList.forEach((point, pointIndex) => {
+          point.position = newMarkPointList[pointIndex].position
+        })
+        
+        // 删除新生成的标注点
+        newMarkPointList.forEach(point => point.removeSegments())
+      }
+
+      this.createBreakPoint = (segment, radius) => {
+        let index = segment.index
+        const newDot = new Path.Circle(segment.point, radius)
+
+        newDot.fillColor = yellowColor
+        newDot.onMouseDrag = (event) => {
+          const currentSegment = this.path.segments[index]
+          const currentSegmentIsKeyPoint = currentSegment.isKeyPoint
+
+          newDot.position = event.point
+
+          // 如果上一个segment和下一个segment都是拐点，直接移动
+          if((!currentSegment.previous && currentSegment.next.isBreakPoint)
+            || (!currentSegment.next && currentSegment.previous.isBreakPoint)
+            || (currentSegment.previous?.isBreakPoint && currentSegment.next?.isBreakPoint)
+          ) {
+            this.path.removeSegment(index)
+            this.path.insert(index, event.point)
+            this.path.segments[index].isBreakPoint = true
+            this.path.segments[index].isKeyPoint = currentSegmentIsKeyPoint
+            return
+          }
+
+          // 上一个segment不是拐点，删除上一个segment，拉平
+          if(currentSegment.previous && !currentSegment.previous.isBreakPoint) {
+            this.path.removeSegment(currentSegment.previous.index)
+            index = index > 0 ? index - 1 : index // 当index为0，代表当前是头节点，index不变
+          }
+
+          // 下一个segment不是拐点，删除segment
+          if(currentSegment.next && !currentSegment.next.isBreakPoint){
+            this.path.removeSegment(currentSegment.next.index)
+          }
+          
+          this.path.removeSegment(index)
+          this.path.insert(index, event.point)
+          this.path.segments[index].isBreakPoint = true
+          this.path.segments[index].isKeyPoint = currentSegmentIsKeyPoint
+          // 删除segment，因为闭包，导致index改变了，所以要更新所有点位
+          this.refreshBreakPoint(newDot.id)
+        }
+
+        newDot.onMouseUp = (event) => {
+          const currentSegment = this.path.segments[index]
+
+          if(event.event.button === RIGHT_CLICK){
+            return
+          }
+
+          if(!currentSegment.isKeyPoint && !checkSegmentInKeyPoints(currentSegment)) {
+            return
+          }
+          // 当拖动的是关键点，刷新所有点位
+          if(currentSegment.isKeyPoint){
+            this.refreshKeyPoints()
+            return
+          }
+        
+          let tempSegment = currentSegment.previous
+          let startX = 0          // 起始segment，也就是起始mark点 x坐标
+          let startY = 0          // y坐标
+          let endX = 0            // 结束segment，也就是结束mark点 x坐标
+          let endY = 0            // y坐标
+          let startIndex = 0      // 起始mark点的index
+          let endIndex = 0        // 结束mark点的index
+
+          // 迭代segment，找到最近相邻的两个keyPointSegment
+          while(!tempSegment.isKeyPoint) {
+            tempSegment = tempSegment.previous
+          }
+          const fromIndex = tempSegment.index // 起始segment的index
+          startX = tempSegment.point.x
+          startY = tempSegment.point.y
+
+          tempSegment = currentSegment.next
+          while(!tempSegment.isKeyPoint) {
+            tempSegment = tempSegment.next
+          }
+          endX = tempSegment.point.x
+          endY = tempSegment.point.y
+          // 结束segment的index
+          // 如果最后一个指向index 0，代表最后一段，也就是segments的长度
+          const toIndex = tempSegment.index === 0 ? this.path.segments.length : tempSegment.index
+
+          // 循环所有的mark点，直到找到第一个坐标和起始segment坐标一致，当前的index就是起始
+          for(let i = 0; i < this.markPointList.length; i++) {
+            const { x: markX, y: markY } = this.markPointList[i].position
+            if(markX === startX && markY === startY) {
+              startIndex = i
+              break
+            }
+          }
+          // 起始mark点的index 加上 点位个数，可以得到结束index
+          endIndex = startIndex + divideNum
+
+          const partMarkPointList = createMarkPoints(fromIndex, toIndex, this.path.segments, divideNum)
+
+          // 根据起始结束index，更改mark点的坐标
+          for(let i = startIndex; i < endIndex; i++) {
+            this.markPointList[i].position = partMarkPointList[i - startIndex].position
+          }
+          // 删除新生成的点位
+          partMarkPointList.forEach(point => point.removeSegments())
+        }
+        return newDot
+      }
+
+      this.onMouseDown = (event) => {
+        const { point } = event
+        const hitResult = project.hitTest(event.point, hitOptions);
+
+        if(!hitResult) return
+        if(!Key.isDown('alt') || event.event.button !== RIGHT_CLICK) return
+
+        const nextPoint = new Point(event.point)
+        const nextIndex = hitResult.location.index + 1
+        this.path.insert(nextIndex, nextPoint)
+        this.path.segments[nextIndex].isBreakPoint = true
+
+        const nextBraekPointSegment =  this.path.segments[nextIndex].next
+        const previousBreakPointSegment =  this.path.segments[nextIndex].previous
+        let currentBreakPointIndex = 0
+
+        //如果下一个点是拐点，当前点index去下一个拐点的index
+        if(nextBraekPointSegment.isBreakPoint) {
+          currentBreakPointIndex = findSegmentIndexInBreakPoints(nextBraekPointSegment, this.breakPointList)
+        }
+
+        //上一个点是拐点的情况
+        if(previousBreakPointSegment.isBreakPoint) {
+          currentBreakPointIndex = findSegmentIndexInBreakPoints(previousBreakPointSegment, this.breakPointList)
+          // 因为上一个是拐点，所以当前点index需要加一
+          currentBreakPointIndex = currentBreakPointIndex + 1
+        }
+
+        const nextBreakPoint = this.createBreakPoint( this.path.segments[nextIndex], breakPointRadius)
+        
+        this.breakPointList.splice(currentBreakPointIndex, 0, nextBreakPoint)
+        this.refreshBreakPoint(nextBreakPoint.id)
+      }
+
+      this.initBreakPoints = () => {
+        if(this.path.segments.length <= 2) {
+          this.path.segments.forEach((segment, index) => {
+            segment.isBreakPoint = true
+            const breakPoint = this.createBreakPoint(segment, breakPointRadius)
+            this.breakPointList.push(breakPoint)
+          })
+          return
+        }
+
+        const pointInterval = Math.ceil(this.path.segments.length / 10)
+        this.path.segments.forEach((segment, index) => {
+          const isEven = index % pointInterval === 0
+          // 偶数个添加黄点
+          if(isEven || segment.isKeyPoint) {
+            segment.isBreakPoint = true
+            const breakPoint = this.createBreakPoint(segment, breakPointRadius)
+            this.breakPointList.push(breakPoint)
+          }
+        })
+      }
+
+      this.initKeyPoints = () => {
+        this.keyPoints.forEach(pointIndex => {
+          this.path.segments[pointIndex].isKeyPoint = true
+          const keyPoint = createKeyPoint(this.path.segments[pointIndex].point, keyPointRadius)
+          this.keyPointList.push(keyPoint)
+        })
+      }
+
+      this.initMarkPoints = () => {
+        const keyPointWithSegments = this.path.segments.filter(segment => segment.isKeyPoint)
+        const len = this.path.closed ? keyPointWithSegments.length : keyPointWithSegments.length - 1
+
+        for(let i = 0; i < len; i++) {
+          const fromIndex = keyPointWithSegments[i].index
+          const toIndex = i === keyPointWithSegments.length - 1 ? this.path.segments.length : keyPointWithSegments[i + 1].index
+          const markPoints = createMarkPoints(fromIndex, toIndex, this.path.segments, divideNum)
+          this.markPointList.push(...markPoints)
+        }
+      }
+
+      this.initKeyPoints()
+      this.initBreakPoints()
+      this.initMarkPoints()
+      this.path.onMouseDown = this.onMouseDown
+    }
+
     // Create a simple drawing tool:
     const tool = new Tool();
 
@@ -75,15 +407,7 @@
     }
     const canvas = document.getElementById('myCanvas')
     const imgRaster = new Raster(figureData.url)
-    const keyPoints = [0, 8]
-    const breakPointList = []
-    const markPointList = []
-    const keyPointList = []
-
-    const path = new Path()
-    path.strokeColor = yellowColor
-    path.strokeWidth = markDotRadius
-    path.closed = true
+    const annoList = []
 
     imgRaster.position = view.center;
 
@@ -100,78 +424,36 @@
           x: point.x * scaleRate + x,
           y: point.y * scaleRate + y
         }))
+
+      let axisData = null
       
-      const pointList = []
-      templateData.lines[1].points.forEach(pointIndex => {
-        const dot = nextPointData[pointIndex]
-        pointList.push(new Point(dot.x, dot.y))
-      })
-  
-      for(let i = 0; i < pointList.length - 1; i++) {
-        path.add(pointList[i])
+      for(let i = 0; i< templateData.lines.length; i++) {
+        const line = templateData.lines[i]
+        const pointList = []
+        line.points.forEach(pointIndex => {
+          const dot = nextPointData[pointIndex]
+          pointList.push(new Point(dot.x, dot.y))
+        })
+
+        if(line.isAxis) {
+          axisData = pointList
+          continue
+        }
+        const keyPoints = []
+        const newLinePoints = [...line.points]
+
+        if(checkPathIsClosed(pointList)) {
+          newLinePoints.pop()
+        }
+        
+        line.keyPoints.forEach(keyPoint => {
+          keyPoints.push(newLinePoints.indexOf(keyPoint))
+        })
+        annoList.push(new Annotation(pointList, keyPoints))
       }
-      initKeyPoints(keyPoints, path.segments)
-      initMarkDots(path.segments) // 后绘制的在上面
-      initMarkPoints(path.segments)
+      const axis = new AxisPath(axisData, annoList)
     }
     
-
-    /*
-      初始化方法
-    */
-    function initMarkDots(segments) {
-      segments.forEach((segment, index) => {
-        const isEven = index % 2 === 0
-        // 偶数个添加黄点
-        if(segment.next && isEven) {
-          segment.isBreakPoint = true
-          breakPointList.push(createDot(segment, breakPointRadius))
-        }
-      })
-    }
-
-    function initKeyPoints(list, segments) {
-      list.forEach(pointIndex => {
-        segments[pointIndex].isKeyPoint = true
-        const keyPoint = createKeyPoint(segments[pointIndex].point, keyPointRadius)
-        keyPointList.push(keyPoint)
-      })
-    }
-
-    function initMarkPoints(segments) {
-      const keyPointWithSegments = segments.filter(segment => segment.isKeyPoint)
-
-      for(let i = 0; i < keyPointWithSegments.length; i++) {
-        const fromIndex = keyPointWithSegments[i].index
-        const toIndex = i === keyPointWithSegments.length - 1 ? segments.length : keyPointWithSegments[i + 1].index
-        markPointList.push(...createMarkPoints(fromIndex, toIndex, segments, divideNum))
-      }
-    }
-
-    function refreshKeyPoints() {
-      // 获取所有关键点所在segment
-      const keyPointWithSegments = path.segments.filter(segment => segment.isKeyPoint)
-      const newMarkPointList = []
-      
-      // 移动关键点的坐标到新的segment坐标
-      for(let i = 0; i < keyPointList.length; i++) {
-        keyPointList[i].position = keyPointWithSegments[i].point
-      }
-
-      // 根据关键点变化，新生成一批新的标注点
-      for(let i = 0; i < keyPointWithSegments.length; i++) {
-        const fromIndex = keyPointWithSegments[i].index
-        const toIndex = i === keyPointWithSegments.length - 1 ? path.segments.length : keyPointWithSegments[i + 1].index
-        newMarkPointList.push(...createMarkPoints(fromIndex, toIndex, path.segments, divideNum))
-      }
-      // 移动当前标注点到新的标注点
-      markPointList.forEach((point, pointIndex) => {
-        point.position = newMarkPointList[pointIndex].position
-      })
-      
-      // 删除新生成的标注点
-      newMarkPointList.forEach(point => point.removeSegments())
-    }
 
     /*
       创建标记点
@@ -236,6 +518,7 @@
     /*
       工具方法
     */
+
     function findBreakPointIndexInSegments(breakPoint, segments) {
       for(let i = 0; i < segments.length; i++) {
         const {x: segmentX, y: segmentY } = segments[i].point
@@ -285,21 +568,6 @@
       console.log(result)
     }
 
-    function refreshBreakPoint(currentPointId) {
-      for(let i = 0; i < breakPointList.length; i++) {
-        const breakPoint = breakPointList[i]
-
-        if(currentPointId === breakPoint.id) continue
-
-        // 找到点位在segments里的index
-        const breakPointIndexInPath = findBreakPointIndexInSegments(breakPoint, path.segments)
-        // 把拐点删了
-        breakPoint.removeSegments()
-        // 以最新的segment去创建拐点
-        breakPointList[i] = createDot(path.segments[breakPointIndexInPath], breakPointRadius)
-      }
-    }
-
     function arrangeMarkPoint(current, toSegment, len, left) {
       const { x: currentX, y: currentY } = current
       const { x: nextX, y: nextY} = toSegment
@@ -310,51 +578,11 @@
       } = calculateLinearOneUnknown(currentX, nextX, currentY, nextY, len, left)
       return createMarkPoint(new Point(newX, newY), markDotRadius)
     }
-
-    const hitOptions = {
-      stroke: true,
-      tolerance: 5
-    }
-
-    path.onMouseDown = function(event) {
-      const { point } = event
-      const hitResult = project.hitTest(event.point, hitOptions);
-
-      if(!hitResult) return
-      if(!Key.isDown('alt') || event.event.button !== RIGHT_CLICK) return
-
-      const nextPoint = new Point(event.point)
-      const nextIndex = hitResult.location.index + 1
-      path.insert(nextIndex, nextPoint)
-      path.segments[nextIndex].isBreakPoint = true
-
-      const nextBraekPointSegment = path.segments[nextIndex].next
-      const previousBreakPointSegment = path.segments[nextIndex].previous
-      let currentBreakPointIndex = 0
-
-      //如果下一个点是拐点，当前点index去下一个拐点的index
-      if(nextBraekPointSegment.isBreakPoint) {
-        currentBreakPointIndex = findSegmentIndexInBreakPoints(nextBraekPointSegment, breakPointList)
-      }
-
-      //上一个点是拐点的情况
-      if(previousBreakPointSegment.isBreakPoint) {
-        currentBreakPointIndex = findSegmentIndexInBreakPoints(previousBreakPointSegment, breakPointList)
-        // 因为上一个是拐点，所以当前点index需要加一
-        currentBreakPointIndex = currentBreakPointIndex + 1
-      }
-
-      const nextBreakPoint = createDot(path.segments[nextIndex], breakPointRadius)
-      
-      breakPointList.splice(currentBreakPointIndex, 0, nextBreakPoint)
-      refreshBreakPoint(nextBreakPoint.id)
-    }
-
     /*
       点创建方法
     */
 
-    function createDot(segment, radius) {
+    function createBreakPoint(segment, radius) {
       let index = segment.index
       const newDot = new Path.Circle(segment.point, radius)
 

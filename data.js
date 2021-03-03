@@ -969,9 +969,11 @@ const templateData = {
   "invisiblePointColor": "lime",
   "textColor": "black",
   "lineColor": "cornflowerblue",
-  "lines": [{
+  "lines": [
+    {
       "label": "左眉",
       "lineColor": "lightskyblue",
+      "keyPoints": [0, 8],
       "points": [
         0,
         1,
@@ -995,6 +997,7 @@ const templateData = {
     {
       "label": "右眉",
       "lineColor": "lightskyblue",
+      "keyPoints": [16, 24],
       "points": [
         16,
         17,
@@ -1018,6 +1021,7 @@ const templateData = {
     {
       "label": "左眼",
       "lineColor": "mediumpurple",
+      "keyPoints": [32, 44],
       "points": [
         32,
         33,
@@ -1049,6 +1053,7 @@ const templateData = {
     {
       "label": "右眼",
       "lineColor": "mediumpurple",
+      "keyPoints": [56, 68],
       "points": [
         56,
         57,
@@ -1080,6 +1085,7 @@ const templateData = {
     {
       "label": "鼻梁",
       "lineColor": "cornflowerblue",
+      "keyPoints": [80, 84],
       "points": [
         80,
         81,
@@ -1091,6 +1097,7 @@ const templateData = {
     {
       "label": "鼻轮廓",
       "lineColor": "darkcyan",
+      "keyPoints": [88, 90, 91, 92, 94],
       "points": [
         85,
         86,
@@ -1110,6 +1117,7 @@ const templateData = {
     {
       "label": "左鼻背",
       "lineColor": "lightgreen",
+      "keyPoints": [98, 99],
       "points": [
         98,
         99
@@ -1118,6 +1126,7 @@ const templateData = {
     {
       "label": "右鼻背",
       "lineColor": "lightgreen",
+      "keyPoints": [100, 101],
       "points": [
         100,
         101
@@ -1126,6 +1135,7 @@ const templateData = {
     {
       "label": "嘴唇外廓",
       "lineColor": "turquoise",
+      "keyPoints": [102, 111, 120, 126, 129, 132],
       "points": [
         102,
         103,
@@ -1169,6 +1179,7 @@ const templateData = {
     {
       "label": "嘴唇内廓",
       "lineColor": "royalblue",
+      "keyPoints": [138, 147, 156, 165],
       "points": [
         138,
         139,
@@ -1212,6 +1223,7 @@ const templateData = {
     {
       "label": "轮廓",
       "lineColor": "salmon",
+      "keyPoints": [174, 194, 214],
       "points": [
         174,
         175,
@@ -1259,6 +1271,7 @@ const templateData = {
     {
       "label": "额头",
       "lineColor": "gold",
+      "keyPoints": [215, 218, 221],
       "points": [
         215,
         216,
@@ -1273,6 +1286,8 @@ const templateData = {
     {
       "label": "中轴线",
       "lineColor": "red",
+      "keyPoints": [218, 84, 194],
+      "isAxis": true,
       "points": [
         218,
         84,

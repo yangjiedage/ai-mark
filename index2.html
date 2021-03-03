@@ -77,11 +77,56 @@
     pointList.forEach((point, index) => {
       path.add(point)
     })
-
     console.log(project.activeLayer)
     createSpecialPoints(sepcialPoints)
     createDots(path.segments)
     createRealPoints(realPoints)
+
+
+    const nextPointList = [new Point(600, 250), new Point(800, 250)]
+
+    const path2 = new Path({
+      segments: [new Point(600, 250), new Point(800, 250)]
+    })
+  
+    path2.strokeColor = 'blue'
+    path2.strokeWidth = 2
+    path2.segments.forEach((segment) => {
+      createKeyPoint(segment, 10)
+    })
+
+    function findSegmentInPath(current, list){
+      const { x: currentX, y: currentY } = current.point
+
+      for(let i =0; i < list.length; i++) {
+        const item = list[i]
+        const { x: segmentX, y: segmentY } = item.position
+        if(currentX === segmentX && currentY === segmentY) {
+          return item
+        }
+      }
+    }
+    function createKeyPoint(segment, radius) {
+      const dot = new Path.Circle(segment.point, radius)
+      dot.fillColor = 'blue'
+
+      const index = path2.segments.indexOf(segment)
+      dot.onMouseDrag = function dotDrag(event) {
+        dot.position = event.point
+        const nextPoint = findSegmentInPath(path2.segments[index], dotList)
+        path2.removeSegment(index)
+        path2.insert(index, event.point)
+        
+        // console.log('nextPoint', nextPoint)
+        nextPoint.emit('mousedrag', event)
+      }
+
+      dot.onMouseUp = function(event) {
+        console.log('mouse up')
+      }
+      return dot
+    }
+
 
     function createDots(segments) {
       dotList.forEach(dot => {
@@ -125,6 +170,7 @@
 
       const index = path.segments.indexOf(segment)
       dot.onMouseDrag = function dotDrag(event) {
+        console.log('event', event)
         dot.position = event.point
         path.removeSegment(index)
         path.insert(index, event.point)
