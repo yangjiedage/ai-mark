@@ -54,6 +54,7 @@
     const myElement = document.querySelector('#myCanvas');
     myElement.addEventListener('contextmenu', blockContextMenu);
   })();
+
   const yellowColor = '#e1e111'
   const markDotRadius = 2
   const breakPointRadius = 6
@@ -94,6 +95,7 @@
           newDot.position = event.point
           const currentSegment = this.path.segments[index]
          
+          // 遍历所有的点位，找到拖动点位一起的点
           for(let i = 0; i < this.annoList.length; i++) {
             const anno = annoList[i]
 
@@ -127,6 +129,9 @@
       return startX === endX && startY === endY
     }
 
+    /*
+      判断segment是否在两个关键点之间
+    */
     function checkSegmentInKeyPoints(segment) {
       let previousHasKeyPoint = false
       let nextHasKeyPoint = false
@@ -176,9 +181,9 @@
           // 找到点位在segments里的index
           const breakPointIndexInPath = findBreakPointIndexInSegments(breakPoint, this.path.segments)
           // 把拐点删了
-          breakPoint.removeSegments()
+          const newBreakPoint = this.createBreakPoint(this.path.segments[breakPointIndexInPath], breakPointRadius, breakPoint)
           // 以最新的segment去创建拐点
-          this.breakPointList[i] = this.createBreakPoint(this.path.segments[breakPointIndexInPath], breakPointRadius)
+          this.breakPointList[i] = newBreakPoint
         }
       }
 
@@ -208,11 +213,13 @@
         newMarkPointList.forEach(point => point.removeSegments())
       }
 
-      this.createBreakPoint = (segment, radius) => {
+      this.createBreakPoint = (segment, radius, defaultPoint) => {
         let index = segment.index
-        const newDot = new Path.Circle(segment.point, radius)
-
-        newDot.fillColor = yellowColor
+        let newDot = defaultPoint
+        if(!newDot) {
+          newDot = new Path.Circle(segment.point, radius)
+          newDot.fillColor = yellowColor
+        }
         newDot.onMouseDrag = (event) => {
           const currentSegment = this.path.segments[index]
           const currentSegmentIsKeyPoint = currentSegment.isKeyPoint
@@ -257,6 +264,7 @@
             return
           }
 
+          // 当点为不是关键点，且点位周围没有关键点，直接return
           if(!currentSegment.isKeyPoint && !checkSegmentInKeyPoints(currentSegment)) {
             return
           }
@@ -435,6 +443,7 @@
           pointList.push(new Point(dot.x, dot.y))
         })
 
+        // 当图形是中轴线，跳过
         if(line.isAxis) {
           axisData = pointList
           continue
@@ -442,10 +451,12 @@
         const keyPoints = []
         const newLinePoints = [...line.points]
 
+        // 当图形是闭环，拿掉最后一个点
         if(checkPathIsClosed(pointList)) {
           newLinePoints.pop()
         }
         
+        // 根据keyPoints取得关键点index
         line.keyPoints.forEach(keyPoint => {
           keyPoints.push(newLinePoints.indexOf(keyPoint))
         })
